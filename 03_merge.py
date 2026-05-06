@@ -1,0 +1,40 @@
+import os
+import sys
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import PeftModel
+
+MODEL_ID = "./local_model"
+
+def merge_weights():
+    if not os.path.exists("./translategemma-finetuned"):
+        print("Error: ./translategemma-finetuned not found. Please run 02_finetune.py first.")
+        sys.exit(1)
+    
+    if not os.path.exists("./local_model"):
+        print("Error: ./local_model not found. Pre-downloaded base model is required.")
+        sys.exit(1)
+
+    print("Loading base tokenizer and model from local path...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    base_model = AutoModelForCausalLM.from_pretrained(
+        MODEL_ID,
+        device_map="cpu",
+        dtype=torch.bfloat16
+    )
+
+    print("Loading LoRA adapter weights...")
+    model = PeftModel.from_pretrained(base_model, "./translategemma-finetuned")
+
+    print("Merging adapters into base model (this may take a lot of RAM)...")
+    merged_model = model.merge_and_unload()
+
+    print("Saving the final merged model and tokenizer...")
+    os.makedirs("./final_merged_model", exist_ok=True)
+    merged_model.save_pretrained("./final_merged_model")
+    tokenizer.save_pretrained("./final_merged_model")
+
+    print("Done! Merged model ready in ./final_merged_model.")
+
+if __name__ == "__main__":
+    merge_weights()
