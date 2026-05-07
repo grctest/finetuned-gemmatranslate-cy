@@ -28,6 +28,8 @@ def merge_weights():
 
     print("Merging adapters into base model (this may take a lot of RAM)...")
     merged_model = model.merge_and_unload()
+    # Ensure the merged model remains in bfloat16
+    merged_model = merged_model.to(torch.bfloat16)
 
     print("Saving the final merged model and tokenizer...")
     os.makedirs("./final_merged_model", exist_ok=True)

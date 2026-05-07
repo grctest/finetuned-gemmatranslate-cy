@@ -1,6 +1,6 @@
 import os
 import json
-from datasets import load_dataset, DatasetDict
+from datasets import load_dataset, DatasetDict, Features, Sequence, Value, Dataset
 from transformers import AutoProcessor, AutoModelForImageTextToText
 import torch
 
@@ -68,9 +68,9 @@ def process_and_save():
             formatted_en_gd = format_example_chat(en_text, gd_text, "en", "gd")
             formatted_gd_en = format_example_chat(gd_text, en_text, "gd", "en")
 
-            # Store as JSON strings to avoid PyArrow schema mixing list/string errors
-            new_data["messages"].append(json.dumps(formatted_en_gd["messages"]))
-            new_data["messages"].append(json.dumps(formatted_gd_en["messages"]))
+            # Store directly as dictionary
+            new_data["messages"].append(formatted_en_gd["messages"])
+            new_data["messages"].append(formatted_gd_en["messages"])
             
         print(f" -> Processed {split} (New bidirectional size: {len(new_data['messages'])})")
         
@@ -80,10 +80,14 @@ def process_and_save():
     print("Saving processed data to disk...")
     os.makedirs("./processed_data", exist_ok=True)
     
-    from datasets import Dataset
-    train_ds = Dataset.from_dict(processed_dataset["train"])
-    val_ds = Dataset.from_dict(processed_dataset["validation"])
-    test_ds = Dataset.from_dict(processed_dataset["test"])
+    # Define the exact schema for the messages list
+    # Because 'content' can be a list (for user) or a string (for assistant),
+    # huggingface automatically infers it safely with `from_list`. 
+    # But as instructed, defining a feature layout limits arbitrary parsing.
+    
+    train_ds = Dataset.from_list(processed_dataset["train"]["messages"])
+    val_ds = Dataset.from_list(processed_dataset["validation"]["messages"])
+    test_ds = Dataset.from_list(processed_dataset["test"]["messages"])
     
     DatasetDict({"train": train_ds, "validation": val_ds, "test": test_ds}).save_to_disk("./processed_data")
     print("Done! Data prepared and saved to ./processed_data.")
