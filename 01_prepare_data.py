@@ -1,150 +1,267 @@
-import os
+import argparse
 import json
-from datasets import load_dataset, DatasetDict, Features, Sequence, Value, Dataset
-from transformers import AutoProcessor, AutoModelForImageTextToText
+import os
+import shutil
+
 import torch
+from datasets import Dataset, DatasetDict, load_dataset
+from transformers import AutoModelForImageTextToText, AutoProcessor
 
 MODEL_ID = "google/translategemma-4b-it"
+DATASET_ID = "Helsinki-NLP/opus-100"
+DATASET_CONFIG = "cy-en"
+SOURCE_LANG_CODE = "en"
+TARGET_LANG_CODE = "cy"
+SOURCE_LANG_NAME = "English"
+TARGET_LANG_NAME = "Welsh"
+PROCESSED_DATA_DIR = "./processed_data"
+LOCAL_MODEL_DIR = "./local_model"
 
-def format_example(source_text, target_text, src_code="en", tgt_code="gd"):
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Prepare English/Welsh TranslateGemma fine-tuning data."
+    )
+    parser.add_argument(
+        "--textblob-token-budget",
+        type=int,
+        default=512,
+        help="Concatenate adjacent sentence pairs up to this rendered token budget. Use 0 to disable.",
+    )
+    return parser.parse_args()
+
+
+def build_translation_record(source_text, target_text, src_code, tgt_code):
     return {
-        "text": f"User: Translate from {src_code} to {tgt_code}:\n{source_text}\n\nAssistant: {target_text}"
-        # Simplified instruction template for broad compatibility if we bypass actual chat templates
+        "task": "translation",
+        "source_text": source_text,
+        "target_text": target_text,
+        "source_lang_code": src_code,
+        "target_lang_code": tgt_code,
     }
 
-def format_example_chat(source_text, target_text, src_code="en", tgt_code="gd"):
-    """
-    Formats the user turn using the TranslateGemma multimodal content-list structure.
-    The assistant turn must remain a plain string to match the shipped chat template.
-    """
-    return {
-        "messages": [
-            {
-                "role": "user",
-                "content": [{
+
+def build_messages(record):
+    return [
+        {
+            "role": "user",
+            "content": [
+                {
                     "type": "text",
-                    "source_lang_code": src_code,
-                    "target_lang_code": tgt_code,
-                    "text": source_text,
-                }]
-            },
-            {
-                "role": "assistant",
-                "content": target_text
-            }
-        ]
+                    "source_lang_code": record["source_lang_code"],
+                    "target_lang_code": record["target_lang_code"],
+                    "text": record["source_text"],
+                }
+            ],
+        },
+        {
+            "role": "assistant",
+            "content": record["target_text"],
+        },
+    ]
+
+
+def is_quality_pair(source_text, target_text):
+    if not source_text or not target_text:
+        return False
+
+    source_length = len(source_text)
+    target_length = len(target_text)
+
+    if source_length == 0 or target_length == 0:
+        return False
+
+    return not (
+        source_length > 3 * target_length or target_length > 3 * source_length
+    )
+
+
+def estimate_rendered_tokens(tokenizer, record):
+    rendered = tokenizer.apply_chat_template(
+        build_messages(record),
+        tokenize=False,
+        add_generation_prompt=False,
+    )
+    return len(tokenizer(rendered, add_special_tokens=False)["input_ids"])
+
+
+def merge_records(records):
+    first = records[0]
+    return {
+        "task": first["task"],
+        "source_text": "\n".join(record["source_text"] for record in records),
+        "target_text": "\n".join(record["target_text"] for record in records),
+        "source_lang_code": first["source_lang_code"],
+        "target_lang_code": first["target_lang_code"],
     }
 
-def is_quality_pair(en_text, gd_text):
-    if not en_text or not gd_text:
-        return False
-    len_en = len(en_text)
-    len_gd = len(gd_text)
-    if len_en == 0 or len_gd == 0:
-        return False
-    # Filter 3x length discrepancy
-    if len_en > 3 * len_gd or len_gd > 3 * len_en:
-        return False
-    return True
 
-def process_and_save():
-    print("Step 1: Downloading OPUS-100 en-gd dataset from Hugging Face...")
-    dataset = load_dataset("Helsinki-NLP/opus-100", "en-gd")
-    
-    processed_dataset = {}
-    
-    for split in dataset.keys():
-        print(f"Processing split: {split} (Original size: {len(dataset[split])})")
-        new_data = {"messages": []}
-        
-        for item in dataset[split]:
-            translations = item["translation"]
-            en_text = translations.get("en", "").strip()
-            gd_text = translations.get("gd", "").strip()
-            
-            if not is_quality_pair(en_text, gd_text):
-                continue
-                
-            formatted_en_gd = format_example_chat(en_text, gd_text, "en", "gd")
-            formatted_gd_en = format_example_chat(gd_text, en_text, "gd", "en")
+def group_into_textblobs(records, tokenizer, token_budget):
+    if token_budget <= 0:
+        return records
 
-            # Store directly as dictionary
-            new_data["messages"].append(formatted_en_gd["messages"])
-            new_data["messages"].append(formatted_gd_en["messages"])
-            
-        print(f" -> Processed {split} (New bidirectional size: {len(new_data['messages'])})")
-        
-        # We will map it to a format the datasets library can save
-        processed_dataset[split] = new_data
-        
-    print("Saving processed data to disk...")
-    os.makedirs("./processed_data", exist_ok=True)
-    
-    # Define the exact schema for the messages list
-    # Because 'content' can be a list (for user) or a string (for assistant),
-    # huggingface automatically infers it safely with `from_list`. 
-    # But as instructed, defining a feature layout limits arbitrary parsing.
-    
-    train_ds = Dataset.from_list(processed_dataset["train"]["messages"])
-    val_ds = Dataset.from_list(processed_dataset["validation"]["messages"])
-    test_ds = Dataset.from_list(processed_dataset["test"]["messages"])
-    
-    DatasetDict({"train": train_ds, "validation": val_ds, "test": test_ds}).save_to_disk("./processed_data")
-    print("Done! Data prepared and saved to ./processed_data.")
+    grouped_records = []
+    buffer = []
 
-    print(f"\nStep 2: Downloading Tokenizer and Model ({MODEL_ID})...")
-    print("This may take a while depending on your internet connection.")
-    
-    # Ensure directory exists and is a directory
-    local_model_path = os.path.abspath("./local_model")
-    if os.path.exists(local_model_path):
-        if not os.path.isdir(local_model_path):
-            print(f" -> Removing conflicting file at {local_model_path}")
-            os.remove(local_model_path)
-    
-    os.makedirs(local_model_path, exist_ok=True)
-    
-    # Download processor so the chat template and tokenizer stay in sync.
+    for record in records:
+        candidate_records = buffer + [record]
+        merged_candidate = merge_records(candidate_records)
+        candidate_length = estimate_rendered_tokens(tokenizer, merged_candidate)
+
+        if buffer and candidate_length > token_budget:
+            grouped_records.append(merge_records(buffer))
+            buffer = [record]
+            continue
+
+        buffer = candidate_records
+
+    if buffer:
+        grouped_records.append(merge_records(buffer))
+
+    return grouped_records
+
+
+def ensure_directory_path(path):
+    if os.path.exists(path) and not os.path.isdir(path):
+        os.remove(path)
+    os.makedirs(path, exist_ok=True)
+
+
+def process_and_save(args):
+    print(f"Step 1: Downloading processor ({MODEL_ID}) for token-aware data shaping...")
     processor = AutoProcessor.from_pretrained(MODEL_ID)
-    processor.save_pretrained(local_model_path)
-    
-    # Download the full Gemma 3 conditional generation model.
+    tokenizer = processor.tokenizer
+
+    print(f"Step 2: Downloading OPUS-100 {DATASET_CONFIG} dataset from Hugging Face...")
+    dataset = load_dataset(DATASET_ID, DATASET_CONFIG)
+    processed_splits = {}
+
+    for split_name, split_dataset in dataset.items():
+        print(f"Processing split: {split_name} (Original size: {len(split_dataset)})")
+        english_to_welsh = []
+        welsh_to_english = []
+
+        for item in split_dataset:
+            translations = item["translation"]
+            source_text = translations.get(SOURCE_LANG_CODE, "").strip()
+            target_text = translations.get(TARGET_LANG_CODE, "").strip()
+
+            if not is_quality_pair(source_text, target_text):
+                continue
+
+            english_to_welsh.append(
+                build_translation_record(
+                    source_text,
+                    target_text,
+                    SOURCE_LANG_CODE,
+                    TARGET_LANG_CODE,
+                )
+            )
+            welsh_to_english.append(
+                build_translation_record(
+                    target_text,
+                    source_text,
+                    TARGET_LANG_CODE,
+                    SOURCE_LANG_CODE,
+                )
+            )
+
+        grouped_records = group_into_textblobs(
+            english_to_welsh,
+            tokenizer,
+            args.textblob_token_budget,
+        )
+        grouped_records.extend(
+            group_into_textblobs(
+                welsh_to_english,
+                tokenizer,
+                args.textblob_token_budget,
+            )
+        )
+
+        processed_splits[split_name] = grouped_records
+        print(f" -> Processed {split_name} (New bidirectional size: {len(grouped_records)})")
+
+    print("Saving processed data to disk...")
+    if os.path.isdir(PROCESSED_DATA_DIR):
+        print(" -> Removing stale processed_data directory before saving regenerated flat records")
+        shutil.rmtree(PROCESSED_DATA_DIR)
+
+    os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
+
+    dataset_dict = DatasetDict(
+        {
+            split_name: Dataset.from_list(records)
+            for split_name, records in processed_splits.items()
+        }
+    )
+    dataset_dict.save_to_disk(PROCESSED_DATA_DIR)
+
+    with open(
+        os.path.join(PROCESSED_DATA_DIR, "prepare_config.json"),
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            {
+                "dataset_id": DATASET_ID,
+                "dataset_config": DATASET_CONFIG,
+                "source_lang_code": SOURCE_LANG_CODE,
+                "target_lang_code": TARGET_LANG_CODE,
+                "source_language_name": SOURCE_LANG_NAME,
+                "target_language_name": TARGET_LANG_NAME,
+                "textblob_token_budget": args.textblob_token_budget,
+                "row_format": "flat_translation_records",
+            },
+            handle,
+            indent=2,
+        )
+    print(f"Done! Data prepared and saved to {PROCESSED_DATA_DIR}.")
+
+    print(f"\nStep 3: Downloading tokenizer and model ({MODEL_ID})...")
+    ensure_directory_path(LOCAL_MODEL_DIR)
+    processor.save_pretrained(LOCAL_MODEL_DIR)
+
     model = AutoModelForImageTextToText.from_pretrained(
         MODEL_ID,
-        dtype=torch.bfloat16,
-        low_cpu_mem_usage=True
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
     )
-    model.save_pretrained(local_model_path)
-    
-    print("\nStep 3: Post-Download Configuration Patching...")
-    # 1. Update tokenizer_config.json to ensure pad_token is handled correctly
-    config_path = os.path.join(local_model_path, "tokenizer_config.json")
+    model.save_pretrained(LOCAL_MODEL_DIR)
+
+    print("\nStep 4: Post-download configuration patching...")
+    config_path = os.path.join(LOCAL_MODEL_DIR, "tokenizer_config.json")
     if os.path.exists(config_path):
-        with open(config_path, "r") as f:
-            t_config = json.load(f)
-        
-        t_config["clean_up_tokenization_spaces"] = False
-        
-        with open(config_path, "w") as f:
-            json.dump(t_config, f, indent=2)
+        with open(config_path, "r", encoding="utf-8") as handle:
+            tokenizer_config = json.load(handle)
+
+        tokenizer_config["clean_up_tokenization_spaces"] = False
+
+        with open(config_path, "w", encoding="utf-8") as handle:
+            json.dump(tokenizer_config, handle, indent=2)
+
         print(" -> Patched tokenizer_config.json")
 
-    # 2. Verify chat_template.jinja contains 'gd'
-    template_path = os.path.join(local_model_path, "chat_template.jinja")
+    template_path = os.path.join(LOCAL_MODEL_DIR, "chat_template.jinja")
     if os.path.exists(template_path):
-        with open(template_path, "r") as f:
-            template_content = f.read()
-        
-        if '"gd":' in template_content:
-            print(" -> Verified: 'gd' is already supported in chat_template.jinja")
+        with open(template_path, "r", encoding="utf-8") as handle:
+            template_content = handle.read()
+
+        if '"cy":' in template_content:
+            print(" -> Verified: 'cy' is already supported in chat_template.jinja")
         else:
-            print(" -> Warning: 'gd' not found in chat_template.jinja. Injecting...")
-            # Simple injection after English if missing
-            new_content = template_content.replace('"en": "English",', '"en": "English",\n    "gd": "Scottish Gaelic",')
-            with open(template_path, "w") as f:
-                f.write(new_content)
-    
-    print(f"\nDone! Model, tokenizer, and dataset are ready in ./local_model and ./processed_data")
+            print(" -> Warning: 'cy' not found in chat_template.jinja. Injecting Welsh support...")
+            updated_content = template_content.replace(
+                '"en": "English",',
+                '"en": "English",\n    "cy": "Welsh",',
+            )
+            with open(template_path, "w", encoding="utf-8") as handle:
+                handle.write(updated_content)
+
+    print(
+        f"\nDone! Model, tokenizer, and English/Welsh dataset are ready in {LOCAL_MODEL_DIR} and {PROCESSED_DATA_DIR}."
+    )
+
 
 if __name__ == "__main__":
-    process_and_save()
+    process_and_save(parse_args())

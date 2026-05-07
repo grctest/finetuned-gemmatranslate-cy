@@ -3,3 +3,14 @@ peft>=0.10.0
 datasets>=2.18.0
 torch>=2.2.0
 accelerate>=0.28.0
+trl>=0.9.6
+sentencepiece>=0.2.0
+
+# Optional for distributed max_vram training.
+deepspeed>=0.15.0; platform_system != "Windows"
+
+# Optional experiment tracking when running `02_finetune.py --report-to wandb`.
+wandb>=0.17.0
+
+# Optional evaluation dependency.
+# Install manually if needed: pip install git+https://github.com/google-research/metricx.git
