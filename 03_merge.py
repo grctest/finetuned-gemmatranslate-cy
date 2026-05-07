@@ -1,7 +1,7 @@
 import os
 import sys
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForImageTextToText
 from peft import PeftModel
 
 MODEL_ID = "./local_model"
@@ -16,10 +16,10 @@ def merge_weights():
         sys.exit(1)
 
     print("Loading base tokenizer and model from local path...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-    base_model = AutoModelForCausalLM.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, clean_up_tokenization_spaces=False)
+    base_model = AutoModelForImageTextToText.from_pretrained(
         MODEL_ID,
-        device_map="cpu",
+        device_map="auto",
         dtype=torch.bfloat16
     )
 

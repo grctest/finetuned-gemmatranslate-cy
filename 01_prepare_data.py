@@ -1,7 +1,7 @@
 import os
 import json
 from datasets import load_dataset, DatasetDict
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoProcessor, AutoModelForImageTextToText
 import torch
 
 MODEL_ID = "google/translategemma-4b-it"
@@ -13,6 +13,10 @@ def format_example(source_text, target_text, src_code="en", tgt_code="gd"):
     }
 
 def format_example_chat(source_text, target_text, src_code="en", tgt_code="gd"):
+    """
+    Formats the user turn using the TranslateGemma multimodal content-list structure.
+    The assistant turn must remain a plain string to match the shipped chat template.
+    """
     return {
         "messages": [
             {
@@ -21,7 +25,7 @@ def format_example_chat(source_text, target_text, src_code="en", tgt_code="gd"):
                     "type": "text",
                     "source_lang_code": src_code,
                     "target_lang_code": tgt_code,
-                    "text": source_text
+                    "text": source_text,
                 }]
             },
             {
@@ -87,36 +91,42 @@ def process_and_save():
     print(f"\nStep 2: Downloading Tokenizer and Model ({MODEL_ID})...")
     print("This may take a while depending on your internet connection.")
     
-    # Download tokenizer (TranslateGemma uses a specialized tokenizer but we load it via AutoTokenizer)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-    tokenizer.save_pretrained("./local_model")
+    # Ensure directory exists and is a directory
+    local_model_path = os.path.abspath("./local_model")
+    if os.path.exists(local_model_path):
+        if not os.path.isdir(local_model_path):
+            print(f" -> Removing conflicting file at {local_model_path}")
+            os.remove(local_model_path)
     
-    # Download model
-    model = AutoModelForCausalLM.from_pretrained(
+    os.makedirs(local_model_path, exist_ok=True)
+    
+    # Download processor so the chat template and tokenizer stay in sync.
+    processor = AutoProcessor.from_pretrained(MODEL_ID)
+    processor.save_pretrained(local_model_path)
+    
+    # Download the full Gemma 3 conditional generation model.
+    model = AutoModelForImageTextToText.from_pretrained(
         MODEL_ID,
         dtype=torch.bfloat16,
         low_cpu_mem_usage=True
     )
-    model.save_pretrained("./local_model")
+    model.save_pretrained(local_model_path)
     
     print("\nStep 3: Post-Download Configuration Patching...")
     # 1. Update tokenizer_config.json to ensure pad_token is handled correctly
-    config_path = "./local_model/tokenizer_config.json"
+    config_path = os.path.join(local_model_path, "tokenizer_config.json")
     if os.path.exists(config_path):
         with open(config_path, "r") as f:
             t_config = json.load(f)
         
-        # Ensure padding side is correct for training (usually right for packing, but depends on model)
-        # Gemma traditionally prefers left padding for inference, but Trainer handles batching.
-        # We'll stick to model defaults unless specific issues arise.
-        t_config["clean_up_tokenization_spaces"] = True
+        t_config["clean_up_tokenization_spaces"] = False
         
         with open(config_path, "w") as f:
             json.dump(t_config, f, indent=2)
         print(" -> Patched tokenizer_config.json")
 
     # 2. Verify chat_template.jinja contains 'gd'
-    template_path = "./local_model/chat_template.jinja"
+    template_path = os.path.join(local_model_path, "chat_template.jinja")
     if os.path.exists(template_path):
         with open(template_path, "r") as f:
             template_content = f.read()

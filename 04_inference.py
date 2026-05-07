@@ -1,7 +1,7 @@
 import os
 import sys
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForImageTextToText
 
 def run_inference():
     if not os.path.exists("./final_merged_model"):
@@ -9,10 +9,10 @@ def run_inference():
         sys.exit(1)
 
     print("Loading merged model and tokenizer for inference...")
-    tokenizer = AutoTokenizer.from_pretrained("./final_merged_model")
-    model = AutoModelForCausalLM.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained("./final_merged_model", clean_up_tokenization_spaces=False)
+    model = AutoModelForImageTextToText.from_pretrained(
         "./final_merged_model",
-        device_map="cpu",
+        device_map="auto",
         dtype=torch.bfloat16
     )
 
@@ -31,12 +31,13 @@ def run_inference():
         
         print(f"\nFormatting prompt for {source_code} -> {target_code}...")
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(prompt, return_tensors="pt")
+        inputs = tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(model.device)
         
         print("Generating response...")
         outputs = model.generate(**inputs, max_new_tokens=100)
         
-        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        generated_tokens = outputs[0][inputs["input_ids"].shape[-1]:]
+        response = tokenizer.decode(generated_tokens, skip_special_tokens=True)
         return response
 
     print("\n--- Testing Translations ---")
