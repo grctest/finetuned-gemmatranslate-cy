@@ -218,3 +218,8 @@ __marimo__/
 .streamlit/secrets.toml
 /local_model
 /processed_data
+/final_merged_model
+/translategemma-finetuned
+translategemma-finetuned.5percent.zip
+KAGGLE_WORKFLOW.md
+modules.txt

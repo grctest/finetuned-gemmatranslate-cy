@@ -32,8 +32,8 @@ source venv/bin/activate
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
-#pip install --pre flash-attn-4
-pip install --no-build-isolation transformer_engine[pytorch]
+#pip install --no-build-isolation transformer_engine[pytorch] # Multi-gpu..
+pip install flash_attn_3 --find-links https://windreamer.github.io/flash-attention3-wheels/cu128_torch2110
 ```
 
 If you need a CUDA or ROCm-specific PyTorch wheel, install a `torch` 2.11.x build first, then run `pip install -r requirements.txt` for the pinned Hugging Face stack.
@@ -82,6 +82,7 @@ python 02_finetune.py --profile cpu
 python 02_finetune.py --profile 3090
 python 02_finetune.py --profile high_vram
 python 02_finetune.py --profile H200 --num-proc 20 --sft-num-proc 30
+python 02_finetune.py --profile H200F --num-proc 20 --sft-num-proc 30
 accelerate launch --num_processes 8 --use_deepspeed 02_finetune.py --profile max_vram
 ```
 
@@ -105,20 +106,10 @@ For fast multi-GPU servers where CPU offload is unnecessary, override the defaul
 accelerate launch --num_processes 8 --use_deepspeed 02_finetune.py --profile max_vram --deepspeed-config ./ds_config_no_offload.json
 ```
 
-Profile behavior:
-
-- `H100`: full fine-tuning, 2048 tokens, relying on native PyTorch SDPA (highly optimized on Hopper). No standalone flash-attn or transformer_engine packages required.
-    - `max_vram`: full fine-tuning, 4096 tokens, Flash Attention 2, DeepSpeed path.
-
-You can override packing context explicitly via:
-```bash
-python 02_finetune.py --profile 3090 --disable-packing
-```
-
 ### Step 3: Merge LoRA Adapters
 Only run this after LoRA profiles.
 ```bash
-python 03_merge.py
+python 03_merge.py --profile cpu
 ```
 
 If you trained with `--profile max_vram`, skip this step.
@@ -126,7 +117,7 @@ If you trained with `--profile max_vram`, skip this step.
 ### Step 4: Inference
 `04_inference.py` loads `./final_merged_model` first, then falls back to `./translategemma-finetuned/full_model`. It runs two translation smoke checks (EN→CY and CY→EN) plus English and Welsh assistant-preservation prompts.
 ```bash
-python 04_inference.py
+python 04_inference.py --profile cpu
 ```
 
 ### Step 5: MetricX Evaluation

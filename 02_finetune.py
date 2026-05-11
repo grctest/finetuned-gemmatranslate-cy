@@ -90,6 +90,7 @@ PROFILE_CONFIGS = {
         "use_cpu": False,
         "learning_rate": 1e-4,
         "optimizer": "adafactor",
+        "dataset_fraction": 1.0,
     },
     "H200": {
         "description": "1x H200 High-Density Profile. Maximizing 141GB VRAM and Hopper core throughput.",
@@ -107,12 +108,13 @@ PROFILE_CONFIGS = {
         "use_cpu": False,
         "learning_rate": 1e-4,
         "optimizer": "adamw_torch_fused",
+        "dataset_fraction": 1.0,
     },
     "H200F": {
         "description": "1x H200 - Flash Attention 3 & Packing Enabled.",
         "device_map": None,
         "dtype": torch.bfloat16,
-        "per_device_train_batch_size": 10,
+        "per_device_train_batch_size": 12,
         "gradient_accumulation_steps": 8,
         "max_seq_length": 2048,
         "bf16": True,
@@ -124,6 +126,7 @@ PROFILE_CONFIGS = {
         "use_cpu": False,
         "learning_rate": 1e-4,
         "optimizer": "adamw_torch_fused",
+        "dataset_fraction": 0.05,
     },
 }
 
@@ -475,7 +478,7 @@ def run_finetune(args):
     profile = PROFILE_CONFIGS[args.profile]
     deepspeed_config = resolve_deepspeed_config(args, profile)
     
-    packing_enabled = profile["packing"]
+    packing_enabled = profile.get("packing", False)
     if args.disable_packing:
         packing_enabled = False
 
@@ -483,6 +486,14 @@ def run_finetune(args):
     dataset = load_from_disk(DATASET_PATH)
     validate_processed_dataset(dataset)
     eval_split_name = resolve_eval_split(dataset)
+
+    # Apply dataset fraction if defined in profile
+    dataset_fraction = profile.get("dataset_fraction", 1.0)
+    if dataset_fraction < 1.0:
+        original_size = len(dataset["train"])
+        new_size = int(original_size * dataset_fraction)
+        print(f"Applying profile dataset fraction {dataset_fraction:.1%}: {original_size:,} -> {new_size:,} samples.")
+        dataset["train"] = dataset["train"].select(range(new_size))
 
     print("Loading processor...")
     processor = AutoProcessor.from_pretrained(MODEL_PATH)
