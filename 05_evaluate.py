@@ -9,6 +9,8 @@ import torch
 from datasets import load_from_disk
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
+from model_assets import build_missing_assets_error
+
 DATASET_PATH = "./processed_data"
 EVALUATION_DIR = "./evaluation"
 MERGED_MODEL_DIR = "./final_merged_model"
@@ -58,6 +60,18 @@ def resolve_model_path(explicit_path=None):
     )
 
 
+def resolve_dataset_split(dataset, requested_split):
+    if requested_split in dataset:
+        return requested_split
+    if requested_split == "validation" and "test" in dataset:
+        return "test"
+
+    available_splits = ", ".join(sorted(dataset.keys()))
+    raise ValueError(
+        f"Requested split '{requested_split}' is unavailable. Available splits: {available_splits}"
+    )
+
+
 def write_jsonl(path, rows):
     with open(path, "w", encoding="utf-8") as handle:
         for row in rows:
@@ -88,17 +102,56 @@ def build_messages(example):
     ]
 
 
-def generate_predictions(args, model_path):
-    dataset = load_from_disk(DATASET_PATH)[args.split]
+def filter_translation_dataset(dataset):
+    if "task" not in dataset.column_names:
+        raise ValueError(
+            "processed_data is missing the 'task' column required to isolate translation evaluation rows. "
+            "Re-run 01_prepare_data.py to regenerate the dataset."
+        )
+
+    translation_dataset = dataset.filter(
+        lambda example: example["task"] == "translation",
+        desc="Filtering translation rows for evaluation",
+    )
+
+    if len(translation_dataset) == 0:
+        raise ValueError("No translation rows are available in the selected evaluation split.")
+
+    return translation_dataset
+
+
+def summarize_direction_scores(predictions, metricx_output):
+    scores_by_direction = {}
+
+    for prediction, score_row in zip(predictions, metricx_output):
+        direction = f"{prediction['source_lang_code']}->{prediction['target_lang_code']}"
+        scores_by_direction.setdefault(direction, []).append(score_row["prediction"])
+
+    return {
+        direction: {
+            "samples": len(scores),
+            "average_metricx": statistics.mean(scores) if scores else None,
+            "median_metricx": statistics.median(scores) if scores else None,
+            "lower_is_better": True,
+        }
+        for direction, scores in sorted(scores_by_direction.items())
+    }
+
+
+def generate_predictions(args, model_path, dataset):
     if args.max_samples is not None:
         dataset = dataset.select(range(min(args.max_samples, len(dataset))))
+
+    missing_assets_error = build_missing_assets_error(model_path)
+    if missing_assets_error:
+        raise ValueError(missing_assets_error)
 
     processor = AutoProcessor.from_pretrained(model_path)
     tokenizer = processor.tokenizer
     model = AutoModelForImageTextToText.from_pretrained(
         model_path,
         device_map="auto",
-        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
     )
 
     rows = []
@@ -115,6 +168,7 @@ def generate_predictions(args, model_path):
 
         rows.append(
             {
+                "task": example["task"],
                 "source_text": example["source_text"],
                 "target_text": example["target_text"],
                 "source_lang_code": example["source_lang_code"],
@@ -169,14 +223,24 @@ def main(args):
 
     os.makedirs(EVALUATION_DIR, exist_ok=True)
 
-    print(f"Generating predictions from {model_path} on the {args.split} split...")
-    predictions = generate_predictions(args, model_path)
+    dataset_dict = load_from_disk(DATASET_PATH)
+    resolved_split = resolve_dataset_split(dataset_dict, args.split)
+    translation_dataset = filter_translation_dataset(dataset_dict[resolved_split])
 
-    predictions_path = os.path.join(EVALUATION_DIR, f"{args.split}_predictions.jsonl")
+    print(
+        f"Generating translation predictions from {model_path} on the {resolved_split} split..."
+    )
+    predictions = generate_predictions(args, model_path, translation_dataset)
+
+    predictions_path = os.path.join(EVALUATION_DIR, f"{resolved_split}_translation_predictions.jsonl")
     write_jsonl(predictions_path, predictions)
 
-    metricx_input_path = os.path.join(EVALUATION_DIR, f"{args.split}_metricx_input.jsonl")
-    metricx_output_path = os.path.join(EVALUATION_DIR, f"{args.split}_metricx_output.jsonl")
+    metricx_input_path = os.path.join(
+        EVALUATION_DIR, f"{resolved_split}_translation_metricx_input.jsonl"
+    )
+    metricx_output_path = os.path.join(
+        EVALUATION_DIR, f"{resolved_split}_translation_metricx_output.jsonl"
+    )
 
     metricx_rows = []
     for row in predictions:
@@ -195,18 +259,21 @@ def main(args):
 
     scores = [row["prediction"] for row in metricx_output]
     summary = {
-        "split": args.split,
+        "split": resolved_split,
+        "requested_split": args.split,
+        "evaluated_task": "translation",
         "samples": len(scores),
         "metricx_model": args.metricx_model,
         "mode": "qe" if args.qe else "reference",
         "average_metricx": statistics.mean(scores) if scores else None,
         "median_metricx": statistics.median(scores) if scores else None,
         "lower_is_better": True,
+        "direction_summaries": summarize_direction_scores(predictions, metricx_output),
         "predictions_path": predictions_path,
         "metricx_output_path": metricx_output_path,
     }
 
-    summary_path = os.path.join(EVALUATION_DIR, f"{args.split}_summary.json")
+    summary_path = os.path.join(EVALUATION_DIR, f"{resolved_split}_translation_summary.json")
     with open(summary_path, "w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
 

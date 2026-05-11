@@ -1,84 +1,151 @@
-# TranslateGemma-4b Fine-Tuning for Scottish Gaelic (GD)
+# TranslateGemma Fine-Tuning for English and Welsh
 
-This project provides a complete, sequential pipeline for fine-tuning the **TranslateGemma-4b-it** model to support Scottish Gaelic (Gàidhlig) using LoRA (Low-Rank Adaptation).
+This repository fine-tunes `google/translategemma-4b-it` for English↔Welsh translation using the OPUS-100 `cy-en` split. The pipeline now supports multiple hardware profiles, a paper-aligned training configuration, and a MetricX-based evaluation path.
 
-## ⚠️ Prerequisites
+## Setup
 
-* **OS:** Windows/Linux/macOS
-* **RAM:** 32GB Minimum (64GB Recommended for the merging phase).
-* **Disk Space:** ~20GB for model weights and dataset shards.
-* **CPU:** Modern CPU with AVX-512 or AMX support is highly recommended for `bfloat16` performance.
+0. Install python
+```bash
+curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash ~/Miniconda3-latest-Linux-x86_64.sh
+source ~/.bashrc
+```
 
-## 🚀 Setup (WSL + venv)
+Then close and reopen your terminal!
 
-1. **Create and Activate Virtual Environment:**
-   Run these commands in your WSL terminal:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
+0.5. Create a screen env
+```bash
+screen -S finetune
 
-2. **Install Dependencies:**
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+# for reconnecting:
+screen -ls
+screen -r finetune
+```
 
-3. **Hugging Face Login:**
-   Since TranslateGemma is a gated model, ensure you have accepted the terms on Hugging Face and are logged in using the new `hf` CLI:
-   ```bash
-   hf auth login
-   ```
+1. Create and activate a virtual environment.
+```bash
+python -m venv venv
+source venv/bin/activate
+```
 
-## 🛠️ Execution Pipeline
+1. Install the core dependencies.
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+#pip install --pre flash-attn-4
+pip install --no-build-isolation transformer_engine[pytorch]
+```
 
-The implementation is split into four scripts. Each script validates that the previous step was completed successfully. **Ensure your venv is active (`source venv/bin/activate`) before running.**
+If you need a CUDA or ROCm-specific PyTorch wheel, install a `torch` 2.11.x build first, then run `pip install -r requirements.txt` for the pinned Hugging Face stack.
 
-### Step 1: Data Preparation & Model Download
-Downloads the OPUS-100 `en-gd` dataset, filters for quality, and downloads the base **TranslateGemma-4b-it** model weights to `./local_model` so everything is available offline for the next steps.
+3. Accept the TranslateGemma license on Hugging Face and log in.
+```bash
+hf auth login
+```
+
+4. If you want MetricX evaluation, install it separately.
+```bash
+pip install git+https://github.com/google-research/metricx.git
+```
+
+## Pipeline
+
+### Step 1: Prepare Welsh Data and Summary Configuration
+This step evaluates the proportions defined in `data_recipe.json`, downloads/caches datasets as required, synthesizes instruction Q&A logic out of dictionary arrays, expands configured high-quality translation sources bidirectionally, rebalances the post-dedup pool toward the target 70:30 translation/instruction mix, and writes summary metrics back dynamically.
+
+The held-out split is now stratified by task and language direction, and its size is configurable through `meta_strategy.eval_size` in `data_recipe.json`.
+
+It also ensures `./local_model` contains the full Hugging Face TranslateGemma snapshot needed for multimodal processor loading, including:
+
+- `preprocessor_config.json`
+- `processor_config.json`
+- `special_tokens_map.json`
+- `tokenizer.model`
+- tokenizer/config/chat template files
+- model weights, either as `model.safetensors` or the sharded `model.safetensors.index.json` plus `model-*.safetensors`
+
 ```bash
 python 01_prepare_data.py
 ```
+*(You will be prompted `[y/N]` visually to inspect the constructed data totals before the merge script allocates array memory).*
 
-### Step 2: Fine-Tuning
-Performs LoRA training with the shipped TranslateGemma chat template.
+#### Optional Step 1b:
 
-We support different hardware profiles natively. If you don't supply a flag, it defaults to the `3090` (24GB VRAM) profile. 
+`python 01b_analyze_token_lengths.py --num-proc 20`
 
+### Step 2: Fine-Tune
+All profiles use the same flat English/Welsh dataset contract, freeze embeddings, and train on prompt-completion pairs with completion-only loss, matching the TranslateGemma technical report more closely.
+
+Recommended profile commands:
 ```bash
-# Recommended for 24GB GPUs (RTX 3090, 4090)
-python 02_finetune.py --profile 3090
-
-# Recommended for 48GB+ GPUs (A6000, A100, H100) - Larger batches
-python 02_finetune.py --profile high_vram
-
-# If you only have CPU (will be very slow)
 python 02_finetune.py --profile cpu
+python 02_finetune.py --profile 3090
+python 02_finetune.py --profile high_vram
+python 02_finetune.py --profile H200 --num-proc 20 --sft-num-proc 30
+accelerate launch --num_processes 8 --use_deepspeed 02_finetune.py --profile max_vram
 ```
-*Note: This will output progress every 10 steps to ensure the terminal doesn't appear frozen.*
 
-### Step 3: Weight Merging
-Merges the LoRA adapter weights back into the base Safetensors model to create a standalone model.
+A100 80GB command:
+```
+accelerate launch --num_processes 1 --use_deepspeed 02_finetune.py \
+  --profile max_vram \
+  --num-proc 16 \
+  --sft-num-proc 4
+```
+
+2x RTX 6000's (48GB each):
+```
+accelerate launch --multi_gpu --num_processes 2 02_finetune.py --profile high_vram --num-proc 16 --sft-num-proc 4
+```
+
+`accelerate launch --num_processes 4 --use_deepspeed 02_finetune.py --profile max_vram --deepspeed-config ./ds_config_no_offload.json`
+
+For fast multi-GPU servers where CPU offload is unnecessary, override the default DeepSpeed config:
+```bash
+accelerate launch --num_processes 8 --use_deepspeed 02_finetune.py --profile max_vram --deepspeed-config ./ds_config_no_offload.json
+```
+
+Profile behavior:
+
+- `H100`: full fine-tuning, 2048 tokens, relying on native PyTorch SDPA (highly optimized on Hopper). No standalone flash-attn or transformer_engine packages required.
+    - `max_vram`: full fine-tuning, 4096 tokens, Flash Attention 2, DeepSpeed path.
+
+You can override packing context explicitly via:
+```bash
+python 02_finetune.py --profile 3090 --disable-packing
+```
+
+### Step 3: Merge LoRA Adapters
+Only run this after LoRA profiles.
 ```bash
 python 03_merge.py
 ```
 
-### Step 4: Inference Testing
-Loads the final merged model and runs test translations for both English → Gaelic and Gaelic → English.
+If you trained with `--profile max_vram`, skip this step.
+
+### Step 4: Inference
+`04_inference.py` loads `./final_merged_model` first, then falls back to `./translategemma-finetuned/full_model`. It runs two translation smoke checks (EN→CY and CY→EN) plus English and Welsh assistant-preservation prompts.
 ```bash
 python 04_inference.py
 ```
 
-## 📂 Project Structure
+### Step 5: MetricX Evaluation
+This script filters the held-out split down to translation rows only, generates translations, and then runs MetricX scoring with per-direction summaries.
+```bash
+python 05_evaluate.py --split test --max-samples 100
+```
 
-- [01_prepare_data.py](01_prepare_data.py): Dataset acquisition and cleaning.
-- [02_finetune.py](02_finetune.py): CPU-optimized LoRA training script.
-- [03_merge.py](03_merge.py): Script to consolidate adapters and base weights.
-- [04_inference.py](04_inference.py): Interactive/Sample test script.
-- [requirements.txt](requirements.txt): Necessary Python libraries.
+For QE-only scoring without references:
+```bash
+python 05_evaluate.py --split test --max-samples 100 --qe
+```
 
-## 💡 Pro-Tips
+## Output Layout
 
-- **Swap Memory:** If `03_merge.py` crashes due to RAM limitations, ensure you have a large Pagefile (Windows) or Swap partition (Linux) enabled.
-- **Sequence Length:** Training is configured for a maximum sequence length of 2000 tokens by default.
-- **Quantization:** Once `04_inference.py` is successful, you can use `llama.cpp` to convert the `./final_merged_model` to GGUF format for even faster local inference.
+- `./processed_data`: regenerated flat English/Welsh dataset.
+- `./local_model`: downloaded TranslateGemma processor and base model.
+- `./translategemma-finetuned/adapter`: LoRA adapters for lighter profiles.
+- `./translategemma-finetuned/full_model`: full fine-tuned model for `max_vram`.
+- `./translategemma-finetuned/training_artifact.json`: metadata describing the latest training artifact.
+- `./final_merged_model`: merged standalone model produced by `03_merge.py`.
+- `./evaluation`: generated predictions and MetricX summaries.

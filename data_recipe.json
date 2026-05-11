@@ -1,0 +1,245 @@
+{
+    "profile_name": "Welsh",
+    "translation_data": {
+        "techiaith_legislation": {
+            "path": "techiaith/legislation-gov-uk_en-cy",
+            "usage": 1.0,
+            "directions": [
+                "en-cy",
+                "cy-en"
+            ],
+            "rows_used": 129452,
+            "rows_available": 64726,
+            "source_rows_used": 64726
+        },
+        "techiaith_cardiff_uni": {
+            "path": "techiaith/cardiff-university-tm-en-cy",
+            "usage": 0.1,
+            "directions": [
+                "en-cy",
+                "cy-en"
+            ],
+            "rows_used": 290600,
+            "rows_available": 1453009,
+            "source_rows_used": 145300
+        },
+        "techiaith_senedd": {
+            "path": "techiaith/cofnodycynulliad_en-cy",
+            "usage": 1.0,
+            "directions": [
+                "en-cy",
+                "cy-en"
+            ],
+            "rows_used": 209476,
+            "rows_available": 104738,
+            "source_rows_used": 104738
+        },
+        "techiaith_bydterm": {
+            "path": "techiaith/bydtermcymru-tm-en-cy",
+            "usage": 1.0,
+            "directions": [
+                "en-cy",
+                "cy-en"
+            ],
+            "rows_used": 155704,
+            "rows_available": 77852,
+            "source_rows_used": 77852
+        },
+        "helsinki_opus": {
+            "path": "Helsinki-NLP/opus-100",
+            "config": "cy-en",
+            "usage": 0,
+            "directions": [
+                "en-cy"
+            ],
+            "rows_used": 0,
+            "rows_available": 289521,
+            "source_rows_used": 0
+        },
+        "welsh_gov_pairs": {
+            "path": "AndreasThinks/welsh-government-pairs",
+            "usage": 1.0,
+            "directions": [
+                "en-cy",
+                "cy-en"
+            ],
+            "rows_used": 26308,
+            "rows_available": 13154,
+            "source_rows_used": 13154
+        }
+    },
+    "dictionary_data": {
+        "termcymru": {
+            "path": "TermCymru/TermCymru",
+            "usage": 1.0,
+            "directions": [
+                "en-cy",
+                "cy-en"
+            ],
+            "note": "Split 50/50 between Translation and Chat-Definition mode",
+            "rows_used": 362775,
+            "rows_available": 154618,
+            "source_rows_used": 154618
+        }
+    },
+    "instruction_data": {
+        "muri_eng": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "eng",
+            "language": "en",
+            "usage": 1.0,
+            "rows_used": 113395,
+            "rows_available": 113395
+        },
+        "muri_dan": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "dan",
+            "language": "da-DK",
+            "usage": 1.0,
+            "rows_used": 13500,
+            "rows_available": 13500
+        },
+        "muri_est": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "est",
+            "language": "ee-EE",
+            "usage": 1.0,
+            "rows_used": 14400,
+            "rows_available": 14400
+        },
+        "muri_cym": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "cym",
+            "language": "cy",
+            "usage": 1.0,
+            "rows_used": 13500,
+            "rows_available": 13500
+        },
+        "muri_ita": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "ita",
+            "language": "it",
+            "usage": 1.0,
+            "rows_used": 21453,
+            "rows_available": 21453
+        },
+        "muri_fin": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "fin",
+            "language": "fi",
+            "usage": 1.0,
+            "rows_used": 14040,
+            "rows_available": 14040
+        },
+        "muri_fra": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "fra",
+            "language": "fr",
+            "usage": 1.0,
+            "rows_used": 26604,
+            "rows_available": 26604
+        },
+        "muri_gle": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "gle",
+            "language": "gle",
+            "usage": 1.0,
+            "rows_used": 13500,
+            "rows_available": 13500
+        },
+        "muri_glg": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "glg",
+            "language": "glg",
+            "usage": 1.0,
+            "rows_used": 14734,
+            "rows_available": 14734
+        },
+        "muri_jpn": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "jpn",
+            "language": "ja-JP",
+            "usage": 1.0,
+            "rows_used": 25603,
+            "rows_available": 25603
+        },
+        "muri_kor": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "kor",
+            "language": "ko-KR",
+            "usage": 1.0,
+            "rows_used": 18187,
+            "rows_available": 18187
+        },
+        "muri_spa": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "spa",
+            "language": "es",
+            "usage": 1.0,
+            "rows_used": 34281,
+            "rows_available": 34281
+        },
+        "muri_ukr": {
+            "path": "akoksal/muri-it-language-split",
+            "config": "ukr",
+            "language": "uk-UA",
+            "usage": 1.0,
+            "rows_used": 7592,
+            "rows_available": 7592
+        },
+        "nemotron_cym": {
+            "path": "locailabs/nemotron-chat-welsh",
+            "language": "cy",
+            "usage": 1.0,
+            "rows_used": 27807,
+            "rows_available": 27807
+        }
+    },
+    "meta_strategy": {
+        "target_ratio": "70:30",
+        "eval_size": 1000,
+        "packing": true,
+        "max_seq_len": 2048
+    },
+    "_run_summary": {
+        "total_translation_rows": 1120776,
+        "total_instruction_rows": 412135,
+        "total_rows": 1532911,
+        "translation_percentage": "73.1%",
+        "instruction_percentage": "26.9%"
+    },
+    "_constructed_summary": {
+        "total_translation_rows": 948257,
+        "total_instruction_rows": 406396,
+        "total_rows": 1354653,
+        "translation_percentage": "70.0%",
+        "instruction_percentage": "30.0%",
+        "training_split_rows": 1353653,
+        "eval_split_rows": 1000,
+        "eval_stratification": {
+            "instruction:cy->cy": 30,
+            "instruction:cy->en": 16,
+            "instruction:da-DK->da-DK": 10,
+            "instruction:ee-EE->ee-EE": 11,
+            "instruction:en->cy": 19,
+            "instruction:en->en": 84,
+            "instruction:es->es": 25,
+            "instruction:fi->fi": 10,
+            "instruction:fr->fr": 20,
+            "instruction:gle->gle": 10,
+            "instruction:glg->glg": 11,
+            "instruction:it->it": 16,
+            "instruction:ja-JP->ja-JP": 19,
+            "instruction:ko-KR->ko-KR": 13,
+            "instruction:uk-UA->uk-UA": 6,
+            "translation:cy->en": 350,
+            "translation:en->cy": 350
+        },
+        "duplicates_removed": 174735,
+        "rows_removed_by_rebalancing": 3408,
+        "translation_direction_counts": {
+            "cy->en": 474108,
+            "en->cy": 474149
+        }
+    }
+}

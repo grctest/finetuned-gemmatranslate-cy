@@ -6,7 +6,8 @@ import torch
 from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
-MODEL_PATH = "./local_model"
+from model_assets import MODEL_PATH, build_missing_assets_error
+
 TRAINING_ROOT = "./translategemma-finetuned"
 ADAPTER_OUTPUT_DIR = os.path.join(TRAINING_ROOT, "adapter")
 ARTIFACT_METADATA_PATH = os.path.join(TRAINING_ROOT, "training_artifact.json")
@@ -42,12 +43,17 @@ def merge_weights():
         print("Error: ./local_model not found. Pre-downloaded base model is required.")
         sys.exit(1)
 
+    missing_assets_error = build_missing_assets_error(MODEL_PATH)
+    if missing_assets_error:
+        print(f"Error: {missing_assets_error}")
+        sys.exit(1)
+
     print("Loading base processor and model from local path...")
     processor = AutoProcessor.from_pretrained(MODEL_PATH)
     base_model = AutoModelForImageTextToText.from_pretrained(
         MODEL_PATH,
         device_map="auto",
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
     )
 
     print("Loading LoRA adapter weights...")

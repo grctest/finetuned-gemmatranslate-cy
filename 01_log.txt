@@ -1,0 +1,63 @@
+python 01_prepare_data.py
+Checking local multimodal model snapshot in ./local_model...
+Local TranslateGemma snapshot is ready.
+[DRY RUN] Loading Data Recipe: Welsh
+------------------------------------------------------------
+CATEGORY        | DATASET SOURCE                 | ROWS USED
+------------------------------------------------------------
+TRANSLATION     | techiaith_legislation          | 129,452
+TRANSLATION     | techiaith_cardiff_uni          | 290,600
+TRANSLATION     | techiaith_senedd               | 209,476
+TRANSLATION     | techiaith_bydterm              | 155,704
+TRANSLATION     | welsh_gov_pairs                | 26,308
+DICTIONARY      | termcymru                      | 154,618
+      TermCymru Breakdown:
+        - Direct Translations (en->cy): 154,618
+        - Direct Translations (cy->en): 154,618
+        - EN->CY Instructions: 29,307
+        - CY->EN Instructions: 24,232
+INSTRUCTION     | muri_eng                       | 113,395
+INSTRUCTION     | muri_dan                       | 13,500
+INSTRUCTION     | muri_est                       | 14,400
+INSTRUCTION     | muri_cym                       | 13,500
+INSTRUCTION     | muri_ita                       | 21,453
+INSTRUCTION     | muri_fin                       | 14,040
+INSTRUCTION     | muri_fra                       | 26,604
+INSTRUCTION     | muri_gle                       | 13,500
+INSTRUCTION     | muri_glg                       | 14,734
+INSTRUCTION     | muri_jpn                       | 25,603
+INSTRUCTION     | muri_kor                       | 18,187
+INSTRUCTION     | muri_spa                       | 34,281
+INSTRUCTION     | muri_ukr                       | 7,592
+INSTRUCTION     | nemotron_cym                   | 27,807
+------------------------------------------------------------
+TOTAL TRANSLATIONS: 1,120,776
+TOTAL INSTRUCTIONS: 412,135
+TOTAL MERGED ROWS:  1,532,911
+------------------------------------------------------------
+Summary before prompt:
+  - Model snapshot path: ./local_model
+  - Total merged rows planned: 1,532,911
+  - Translation rows planned: 1,120,776
+  - Instruction rows planned: 412,135
+Proceed with construction? [y/N] y
+
+--- Starting Construction Phase ---
+1. Concatenating all datasets into a unified pool...
+2. Filtering out empty or null string pairs...
+Filter: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1532911/1532911 [00:07<00:00, 210931.50 examples/s]
+3. Performing global deduplication (dropping identical source-target pairs)...
+   -> Dropped 174,735 duplicate rows.
+   -> Logged segmented duplicates to ./processed_data/dropped_duplicates.json
+4. Rebalancing task mix and translation directions...
+   -> Final task mix target: 70.0% translation / 30.0% instruction
+   -> Translation directions after rebalance:
+      - cy->en: 474,108
+      - en->cy: 474,149
+   -> Removed 3,408 rows during rebalancing.
+5. Splitting into Train and Validation sets with stratification...
+6. Saving formatted data records to ./processed_data...
+Saving the dataset (4/4 shards): 100%|█████████████████████████████████████████████████████████████████████████████████████| 1353653/1353653 [00:10<00:00, 127766.62 examples/s]
+Saving the dataset (1/1 shards): 100%|████████████████████████████████████████████████████████████████████████████████████████████| 1000/1000 [00:00<00:00, 77065.76 examples/s]
+
+Construction Complete. Constructed summary appended to data_recipe.json.
