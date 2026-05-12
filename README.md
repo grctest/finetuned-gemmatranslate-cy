@@ -60,7 +60,7 @@ It also ensures `./local_model` contains the full Hugging Face TranslateGemma sn
 - model weights, either as `model.safetensors` or the sharded `model.safetensors.index.json` plus `model-*.safetensors`
 
 ```bash
-python 01_prepare_data.py
+python 01_prepare_data.py | tee 01_prep_log.txt
 ```
 *(You will be prompted `[y/N]` visually to inspect the constructed data totals before the merge script allocates array memory).*
 
