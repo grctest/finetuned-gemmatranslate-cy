@@ -223,3 +223,11 @@ __marimo__/
 translategemma-finetuned.5percent.zip
 KAGGLE_WORKFLOW.md
 modules.txt
+llama.cpp/
+4B_cy_q8_0.gguf
+01b_0.05_tokens.txt
+01b_token_analysis_0.05.txt
+01b_token_analysis_all_tokens.txt
+02_finetune_log.txt
+conversion_log.txt
+token_analysis.txt

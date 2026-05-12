@@ -12,6 +12,9 @@ from model_assets import MODEL_ID, MODEL_PATH, ensure_local_model_snapshot
 PROCESSED_DATA_DIR = "./processed_data"
 DEFAULT_TRANSLATION_DIRECTIONS = ["en-cy"]
 SUPPORTED_TRANSLATION_DIRECTIONS = {"en-cy", "cy-en"}
+RESPONSE_TEMPLATE = "<start_of_turn>model\n"
+USER_TURN_TEMPLATE = "<start_of_turn>user\n"
+END_OF_TURN_TEMPLATE = "<end_of_turn>\n"
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Prepare Welsh fine-tuning data.")
@@ -153,6 +156,46 @@ def build_empty_processed_dataset():
     )
 
 
+def build_training_prompt(example, tokenizer):
+    if example["task"] == "translation":
+        prompt = tokenizer.apply_chat_template(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "source_lang_code": example["source_lang_code"],
+                            "target_lang_code": example["target_lang_code"],
+                            "text": example["source_text"],
+                        }
+                    ],
+                }
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    elif example["task"] == "instruction":
+        bos_token = tokenizer.bos_token or ""
+        prompt = (
+            f"{bos_token}{USER_TURN_TEMPLATE}"
+            f"{str(example['source_text']).strip()}"
+            f"{END_OF_TURN_TEMPLATE}"
+            f"{RESPONSE_TEMPLATE}"
+        )
+    else:
+        raise ValueError(f"Unsupported task type '{example['task']}'.")
+
+    if not prompt.endswith(RESPONSE_TEMPLATE):
+        raise ValueError("Prompt no longer ends at the assistant response boundary.")
+
+    return prompt
+
+
+def build_training_completion(target_text):
+    return f"{str(target_text).strip()}{END_OF_TURN_TEMPLATE}"
+
+
 def parse_target_ratio(recipe):
     target_ratio = recipe.get("meta_strategy", {}).get("target_ratio", "70:30")
 
@@ -175,6 +218,197 @@ def parse_target_ratio(recipe):
         raise ValueError("target_ratio must contain two positive values.")
 
     return translation_ratio / ratio_sum, instruction_ratio / ratio_sum
+
+
+import re
+import re
+from transformers import AutoTokenizer
+
+import concurrent.futures
+
+def enforce_sequence_lengths(ds, tokenizer, max_tokens=2048, num_proc=1):
+    if len(ds) == 0:
+        return ds
+    # Conservative policy:
+    # - Drop rows whose source alone is too long to leave useful room for a completion
+    # - Do not split rows; keep the full prompt side intact
+    # - Truncate the target using the exact training prompt/completion format from 02_finetune.py
+
+    # 1. Fast, Rust-level batched tokenization to get src/tgt token lengths
+    def compute_lengths(batch):
+        src_enc = tokenizer(batch["source_text"], add_special_tokens=False)
+        tgt_enc = tokenizer(batch["target_text"], add_special_tokens=False)
+        return {
+            "src_len": [len(x) for x in src_enc["input_ids"]],
+            "tgt_len": [len(x) for x in tgt_enc["input_ids"]]
+        }
+
+    ds = ds.map(compute_lengths, batched=True, num_proc=num_proc, desc="Tokenizing")
+
+    # 2. Drop rows whose SOURCE leaves no realistic room for a target.
+    #    User-requested cutoff: 1337 tokens for source (apply to both translations and instructions).
+    SRC_MAX_ALLOWED = 1337
+    def is_src_too_long(x):
+        return x.get("src_len", 0) > SRC_MAX_ALLOWED
+
+    too_long_src_ds = ds.filter(is_src_too_long, num_proc=num_proc, desc="Filter: Too-long sources")
+    if len(too_long_src_ds) > 0:
+        print(f"      -> Dropping {len(too_long_src_ds):,} rows whose source > {SRC_MAX_ALLOWED} tokens (no room for target).")
+        # Remove these rows from the working dataset
+        ds = ds.filter(lambda x: not is_src_too_long(x), num_proc=num_proc, desc="Remove too-long sources")
+
+    # 3. Identify oversized rows (either side exceeds max_tokens)
+    def is_oversized(x):
+        return x["src_len"] > max_tokens or x["tgt_len"] > max_tokens
+
+    good_ds = ds.filter(lambda x: not is_oversized(x), num_proc=num_proc, desc="Bucket: Under Limit")
+    long_ds = ds.filter(is_oversized, num_proc=num_proc, desc="Bucket: Over Limit")
+
+    # Remove temp length columns from good bucket
+    good_ds = good_ds.remove_columns([c for c in ["src_len", "tgt_len"] if c in good_ds.column_names])
+
+    if len(long_ds) == 0:
+        # Final truncation pass (ensure targets fit); see step 5 below
+        final_ds = good_ds
+    else:
+        print(f"      -> Analyzed {len(ds):,} rows: {len(good_ds):,} OK, {len(long_ds):,} oversized.")
+
+        # For long bucket: we'll truncate targets for ALL oversized rows rather than attempt splitting.
+        final_pieces = [good_ds]
+        long_ds = long_ds.remove_columns([c for c in ["src_len", "tgt_len"] if c in long_ds.column_names])
+        final_pieces.append(long_ds)
+        final_ds = concatenate_datasets(final_pieces)
+
+    # 4. Final pass: truncate targets so the exact finetune prompt+completion fit max_tokens.
+
+    def truncate_target(example):
+        tgt = example.get("target_text", "") or ""
+
+        prompt = build_training_prompt(example, tokenizer)
+        prompt_ids = tokenizer.encode(prompt, add_special_tokens=False)
+        completion_suffix_ids = tokenizer.encode(
+            build_training_completion(""),
+            add_special_tokens=False,
+        )
+        pad_len = 1 if getattr(tokenizer, "pad_token_id", None) is not None else 0
+        allowed = max(0, max_tokens - pad_len - len(prompt_ids) - len(completion_suffix_ids))
+
+        if allowed <= 0:
+            example["target_text"] = ""
+            return example
+
+        tgt_ids = tokenizer.encode(tgt, add_special_tokens=False)
+        if len(tgt_ids) > allowed:
+            example["target_text"] = tokenizer.decode(
+                tgt_ids[:allowed],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True,
+            ).strip()
+
+        return example
+
+    final_ds = final_ds.map(truncate_target, num_proc=num_proc, desc="Truncating targets")
+    rows_before_empty_filter = len(final_ds)
+    final_ds = final_ds.filter(
+        lambda x: bool((x.get("target_text", "") or "").strip()),
+        num_proc=num_proc,
+        desc="Filter: Empty targets",
+    )
+
+    removed_empty_targets = rows_before_empty_filter - len(final_ds)
+    if removed_empty_targets > 0:
+        print(f"      -> Dropped {removed_empty_targets:,} rows after truncation produced an empty target.")
+
+    return final_ds
+
+
+def split_long_sequences(df, max_tokens, tokenizer):
+    def get_chunks(text, limit):
+        if not text:
+            return []
+        
+        # Check actual token length instead of character estimate
+        tokens = tokenizer.encode(text, add_special_tokens=False)
+        if len(tokens) <= limit:
+            return [text.strip()]
+            
+        # Find a smart split point near the middle of the text characters
+        mid = len(text) // 2
+        search_start = max(0, mid - (len(text) // 4))
+        search_end = min(len(text), mid + (len(text) // 4))
+        search_area = text[search_start:search_end]
+        
+        split_idx = -1
+        for delimiter in ['\n\n', '\n', '. ', '? ', '! ', '; ', ', ', ' ']:
+            idx = search_area.rfind(delimiter)
+            if idx != -1:
+                split_idx = search_start + idx + len(delimiter)
+                break
+                
+        if split_idx == -1:
+            split_idx = mid
+            
+        part1 = text[:split_idx].strip()
+        part2 = text[split_idx:].strip()
+        
+        chunks = []
+        if len(tokenizer.encode(part1, add_special_tokens=False)) > limit:
+            chunks.extend(get_chunks(part1, limit))
+        elif part1:
+            chunks.append(part1)
+            
+        if len(tokenizer.encode(part2, add_special_tokens=False)) > limit:
+            chunks.extend(get_chunks(part2, limit))
+        elif part2:
+            chunks.append(part2)
+            
+        return chunks
+
+    def process_row(row_tuple):
+        _, row = row_tuple
+        src = str(row.get("source_text", ""))
+        tgt = str(row.get("target_text", ""))
+        task = row.get("task", "")
+        
+        src_tokens = len(tokenizer.encode(src, add_special_tokens=False))
+        tgt_tokens = len(tokenizer.encode(tgt, add_special_tokens=False))
+        
+        if src_tokens <= max_tokens and tgt_tokens <= max_tokens:
+            return [row]
+            
+        src_chunks = get_chunks(src, max_tokens)
+        tgt_chunks = get_chunks(tgt, max_tokens)
+        
+        local_new_rows = []
+        if task == "translation":
+            limit = min(len(src_chunks), len(tgt_chunks))
+            for i in range(limit):
+                new_row = row.copy()
+                new_row['source_text'] = src_chunks[i]
+                new_row['target_text'] = tgt_chunks[i]
+                local_new_rows.append(new_row)
+        else:
+            limit = max(len(src_chunks), len(tgt_chunks))
+            for i in range(limit):
+                new_row = row.copy()
+                s = src_chunks[i] if i < len(src_chunks) else (src_chunks[-1] if len(src_chunks) > 0 else "")
+                t = tgt_chunks[i] if i < len(tgt_chunks) else (tgt_chunks[-1] if len(tgt_chunks) > 0 else "")
+                new_row['source_text'] = s
+                new_row['target_text'] = t
+                local_new_rows.append(new_row)
+        return local_new_rows
+
+    total_rows = len(df)
+    new_rows = []
+    
+    max_workers = (os.cpu_count() or 1) * 2
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(process_row, row_tuple) for row_tuple in df.iterrows()]
+        for future in concurrent.futures.as_completed(futures):
+            new_rows.extend(future.result())
+                
+    return pd.DataFrame(new_rows)
 
 
 def summarize_translation_directions(df):
@@ -538,6 +772,10 @@ def main():
     with open(args.recipe, "r") as f:
         recipe = json.load(f)
 
+    # Initialize Tokenizer globally so it can be passed around
+    print(f"Loading tokenizer from {MODEL_PATH} for sequence length filtering...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+
     print(f"[DRY RUN] Loading Data Recipe: {recipe.get('profile_name', 'Unknown')}")
     print("-" * 60)
     print(f"{'CATEGORY':<15} | {'DATASET SOURCE':<30} | {'ROWS USED'}")
@@ -548,6 +786,7 @@ def main():
     total_instruction_rows = 0
     loaded_datasets = []
 
+    # --- TRANSLATION LOOP ---
     for name, info in recipe.get("translation_data", {}).items():
         if float(info.get("usage", 1.0)) == 0.0:
             continue
@@ -555,53 +794,83 @@ def main():
             ds, orig_len, used_len = load_and_slice(name, info["path"], info["usage"], info.get("config"))
             directions = normalize_translation_directions(info)
             processed_ds = process_translation_ds(ds, directions)
+            
+            # 1. Filter out null/empty strings immediately
+            processed_ds = processed_ds.filter(lambda x: bool(x['source_text']) and bool(x['target_text']), num_proc=args.num_proc)
+            # 2. Enforce token limits upstream
+            processed_ds = enforce_sequence_lengths(processed_ds, tokenizer, max_tokens=2048, num_proc=args.num_proc)
+
             constructed_rows = len(processed_ds)
             print(f"TRANSLATION     | {name:<30} | {constructed_rows:,}")
+            
             info["rows_used"] = constructed_rows
             info["source_rows_used"] = used_len
             info["rows_available"] = orig_len
             total_translation_rows += constructed_rows
             total_rows += constructed_rows
-            processed_ds = processed_ds.add_column("dataset_source", [name] * len(processed_ds))
+            
+            processed_ds = processed_ds.add_column("dataset_source", [name] * constructed_rows)
             loaded_datasets.append(processed_ds)
         except Exception as e:
             print(f"WARNING: Failed to load translation dataset '{name}': {e}")
             continue
 
+    # --- DICTIONARY LOOP ---
     for name, info in recipe.get("dictionary_data", {}).items():
         if float(info.get("usage", 1.0)) == 0.0:
             continue
         try:
             ds, orig_len, used_len = load_and_slice(name, info["path"], info["usage"], info.get("config"))
-            print(f"DICTIONARY      | {name:<30} | {used_len:,}")
-            # Custom term cymru logic
             directions = normalize_translation_directions(info)
-            parsed_ds, t_cnt, i_cnt = parse_termcymru(ds, directions)
-            parsed_ds = parsed_ds.add_column("dataset_source", [name] * len(parsed_ds))
+            parsed_ds, _, _ = parse_termcymru(ds, directions)
+            
+            # Filter and Enforce
+            parsed_ds = parsed_ds.filter(lambda x: bool(x['source_text']) and bool(x['target_text']), num_proc=args.num_proc)
+            parsed_ds = enforce_sequence_lengths(parsed_ds, tokenizer, max_tokens=2048, num_proc=args.num_proc)
+
+            # Recalculate true counts post-split
+            tasks = parsed_ds['task']
+            t_cnt = tasks.count("translation")
+            i_cnt = tasks.count("instruction")
+
+            print(f"DICTIONARY      | {name:<30} | {len(parsed_ds):,}")
+            
             info["rows_used"] = len(parsed_ds)
             info["source_rows_used"] = used_len
             info["rows_available"] = orig_len
             total_translation_rows += t_cnt
             total_instruction_rows += i_cnt
             total_rows += len(parsed_ds)
+            
+            parsed_ds = parsed_ds.add_column("dataset_source", [name] * len(parsed_ds))
             loaded_datasets.append(parsed_ds)
         except Exception as e:
             print(f"WARNING: Failed to load dictionary dataset '{name}': {e}")
             continue
             
+    # --- INSTRUCTION LOOP ---
     for name, info in recipe.get("instruction_data", {}).items():
         if float(info.get("usage", 1.0)) == 0.0:
             continue
         try:
             ds, orig_len, used_len = load_and_slice(name, info["path"], info["usage"], info.get("config"))
-            print(f"INSTRUCTION     | {name:<30} | {used_len:,}")
-            info["rows_used"] = used_len
-            info["rows_available"] = orig_len
-            total_instruction_rows += used_len
-            total_rows += used_len
             source_lang_code, target_lang_code = resolve_instruction_language(info, name)
             processed_ds = process_instruction_ds(ds, source_lang_code, target_lang_code, num_proc=args.num_proc)
-            processed_ds = processed_ds.add_column("dataset_source", [name] * len(processed_ds))
+            
+            # Filter and enforce the same prompt-aware sequence limits used in training.
+            processed_ds = processed_ds.filter(lambda x: bool(x['source_text']) and bool(x['target_text']), num_proc=args.num_proc)
+            processed_ds = enforce_sequence_lengths(processed_ds, tokenizer, max_tokens=2048, num_proc=args.num_proc)
+            
+            constructed_rows = len(processed_ds)
+            print(f"INSTRUCTION     | {name:<30} | {constructed_rows:,}")
+            
+            info["rows_used"] = constructed_rows
+            info["source_rows_used"] = used_len
+            info["rows_available"] = orig_len
+            total_instruction_rows += constructed_rows
+            total_rows += constructed_rows
+            
+            processed_ds = processed_ds.add_column("dataset_source", [name] * constructed_rows)
             loaded_datasets.append(processed_ds)
         except Exception as e:
             print(f"WARNING: Failed to load instruction dataset '{name}': {e}")
@@ -636,13 +905,10 @@ def main():
             sys.exit(0)
 
     print("\n--- Starting Construction Phase ---")
-    print("1. Concatenating all datasets into a unified pool...")
+    print("1. Concatenating all processed and filtered datasets into a unified pool...")
     final_ds = concatenate_datasets(loaded_datasets)
     
-    print("2. Filtering out empty or null string pairs...")
-    final_ds = final_ds.filter(lambda x: x['source_text'] and x['target_text'])
-    
-    print("3. Performing global deduplication (dropping identical source-target pairs)...")
+    print("2. Performing global deduplication (dropping identical source-target pairs)...")
     df = final_ds.to_pandas()
     initial_count = len(df)
     

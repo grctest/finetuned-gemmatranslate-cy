@@ -30,7 +30,7 @@
                 "en-cy",
                 "cy-en"
             ],
-            "rows_used": 209476,
+            "rows_used": 209578,
             "rows_available": 104738,
             "source_rows_used": 104738
         },
@@ -63,7 +63,7 @@
                 "en-cy",
                 "cy-en"
             ],
-            "rows_used": 26308,
+            "rows_used": 22479,
             "rows_available": 13154,
             "source_rows_used": 13154
         }
@@ -88,8 +88,9 @@
             "config": "eng",
             "language": "en",
             "usage": 1.0,
-            "rows_used": 113395,
-            "rows_available": 113395
+            "rows_used": 113378,
+            "rows_available": 113395,
+            "source_rows_used": 113395
         },
         "muri_dan": {
             "path": "akoksal/muri-it-language-split",
@@ -97,7 +98,8 @@
             "language": "da-DK",
             "usage": 1.0,
             "rows_used": 13500,
-            "rows_available": 13500
+            "rows_available": 13500,
+            "source_rows_used": 13500
         },
         "muri_est": {
             "path": "akoksal/muri-it-language-split",
@@ -105,7 +107,8 @@
             "language": "ee-EE",
             "usage": 1.0,
             "rows_used": 14400,
-            "rows_available": 14400
+            "rows_available": 14400,
+            "source_rows_used": 14400
         },
         "muri_cym": {
             "path": "akoksal/muri-it-language-split",
@@ -113,7 +116,8 @@
             "language": "cy",
             "usage": 1.0,
             "rows_used": 13500,
-            "rows_available": 13500
+            "rows_available": 13500,
+            "source_rows_used": 13500
         },
         "muri_ita": {
             "path": "akoksal/muri-it-language-split",
@@ -121,7 +125,8 @@
             "language": "it",
             "usage": 1.0,
             "rows_used": 21453,
-            "rows_available": 21453
+            "rows_available": 21453,
+            "source_rows_used": 21453
         },
         "muri_fin": {
             "path": "akoksal/muri-it-language-split",
@@ -129,7 +134,8 @@
             "language": "fi",
             "usage": 1.0,
             "rows_used": 14040,
-            "rows_available": 14040
+            "rows_available": 14040,
+            "source_rows_used": 14040
         },
         "muri_fra": {
             "path": "akoksal/muri-it-language-split",
@@ -137,7 +143,8 @@
             "language": "fr",
             "usage": 1.0,
             "rows_used": 26604,
-            "rows_available": 26604
+            "rows_available": 26604,
+            "source_rows_used": 26604
         },
         "muri_gle": {
             "path": "akoksal/muri-it-language-split",
@@ -145,7 +152,8 @@
             "language": "gle",
             "usage": 1.0,
             "rows_used": 13500,
-            "rows_available": 13500
+            "rows_available": 13500,
+            "source_rows_used": 13500
         },
         "muri_glg": {
             "path": "akoksal/muri-it-language-split",
@@ -153,31 +161,35 @@
             "language": "glg",
             "usage": 1.0,
             "rows_used": 14734,
-            "rows_available": 14734
+            "rows_available": 14734,
+            "source_rows_used": 14734
         },
         "muri_jpn": {
             "path": "akoksal/muri-it-language-split",
             "config": "jpn",
             "language": "ja-JP",
             "usage": 1.0,
-            "rows_used": 25603,
-            "rows_available": 25603
+            "rows_used": 25602,
+            "rows_available": 25603,
+            "source_rows_used": 25603
         },
         "muri_kor": {
             "path": "akoksal/muri-it-language-split",
             "config": "kor",
             "language": "ko-KR",
             "usage": 1.0,
-            "rows_used": 18187,
-            "rows_available": 18187
+            "rows_used": 18186,
+            "rows_available": 18187,
+            "source_rows_used": 18187
         },
         "muri_spa": {
             "path": "akoksal/muri-it-language-split",
             "config": "spa",
             "language": "es",
             "usage": 1.0,
-            "rows_used": 34281,
-            "rows_available": 34281
+            "rows_used": 34280,
+            "rows_available": 34281,
+            "source_rows_used": 34281
         },
         "muri_ukr": {
             "path": "akoksal/muri-it-language-split",
@@ -185,14 +197,16 @@
             "language": "uk-UA",
             "usage": 1.0,
             "rows_used": 7592,
-            "rows_available": 7592
+            "rows_available": 7592,
+            "source_rows_used": 7592
         },
         "nemotron_cym": {
             "path": "locailabs/nemotron-chat-welsh",
             "language": "cy",
             "usage": 1.0,
-            "rows_used": 27807,
-            "rows_available": 27807
+            "rows_used": 27712,
+            "rows_available": 27807,
+            "source_rows_used": 27807
         }
     },
     "meta_strategy": {
@@ -202,19 +216,19 @@
         "max_seq_len": 2048
     },
     "_run_summary": {
-        "total_translation_rows": 1120776,
-        "total_instruction_rows": 412135,
-        "total_rows": 1532911,
-        "translation_percentage": "73.1%",
-        "instruction_percentage": "26.9%"
+        "total_translation_rows": 907471,
+        "total_instruction_rows": 412020,
+        "total_rows": 1319491,
+        "translation_percentage": "68.8%",
+        "instruction_percentage": "31.2%"
     },
     "_constructed_summary": {
-        "total_translation_rows": 948257,
-        "total_instruction_rows": 406396,
-        "total_rows": 1354653,
+        "total_translation_rows": 733196,
+        "total_instruction_rows": 314227,
+        "total_rows": 1047423,
         "translation_percentage": "70.0%",
         "instruction_percentage": "30.0%",
-        "training_split_rows": 1353653,
+        "training_split_rows": 1046423,
         "eval_split_rows": 1000,
         "eval_stratification": {
             "instruction:cy->cy": 30,
@@ -235,11 +249,11 @@
             "translation:cy->en": 350,
             "translation:en->cy": 350
         },
-        "duplicates_removed": 174735,
-        "rows_removed_by_rebalancing": 3408,
+        "duplicates_removed": 174622,
+        "rows_removed_by_rebalancing": 97446,
         "translation_direction_counts": {
-            "cy->en": 474108,
-            "en->cy": 474149
+            "cy->en": 366598,
+            "en->cy": 366598
         }
     }
 }

@@ -16,7 +16,6 @@ EVALUATION_DIR = "./evaluation"
 MERGED_MODEL_DIR = "./final_merged_model"
 FULL_MODEL_OUTPUT_DIR = "./translategemma-finetuned/full_model"
 
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Evaluate English/Welsh TranslateGemma checkpoints with MetricX."
@@ -40,9 +39,11 @@ def parse_args():
     parser.add_argument("--metricx-max-input-length", type=int, default=1536)
     parser.add_argument("--metricx-batch-size", type=int, default=1)
     parser.add_argument(
-        "--qe",
-        action="store_true",
-        help="Run MetricX in quality-estimation mode without references.",
+        "--device",
+        type=str,
+        choices=["auto", "cpu", "cuda"],
+        default="auto",
+        help="Device to run inference on ('auto', 'cpu', or 'cuda').",
     )
     return parser.parse_args()
 
@@ -148,11 +149,20 @@ def generate_predictions(args, model_path, dataset):
 
     processor = AutoProcessor.from_pretrained(model_path)
     tokenizer = processor.tokenizer
+
+    device = args.device
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    dtype = torch.bfloat16 if device == "cuda" and torch.cuda.is_available() else torch.float32
+
     model = AutoModelForImageTextToText.from_pretrained(
         model_path,
-        device_map="auto",
-        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        device_map=device if device != "cpu" else None,
+        dtype=dtype,
     )
+    if device == "cpu":
+        model = model.to("cpu")
 
     rows = []
     for example in dataset:
