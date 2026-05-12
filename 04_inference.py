@@ -23,6 +23,10 @@ PROFILE_CONFIGS = {
 
 
 def parse_args():
+    """
+    Parses arguments for inference execution, supporting model path overrides 
+    and generation limits.
+    """
     parser = argparse.ArgumentParser(
         description="Run TranslateGemma English/Welsh inference checks."
     )
@@ -49,6 +53,10 @@ def parse_args():
 
 
 def resolve_model_path(explicit_path=None):
+    """
+    Finds the most recent model output folder if no explicit path is provided.
+    First checks for merged LoRA weights, then full fine-tuning results.
+    """
     if explicit_path:
         return explicit_path
 
@@ -62,6 +70,10 @@ def resolve_model_path(explicit_path=None):
 
 
 def run_inference(args):
+    """
+    Comparison test between the original base model and the newly trained 
+    fine-tune across a set of Welsh/English examples.
+    """
     # suppress non-critical transformers info messages
     transformers_logging.set_verbosity_error()
 

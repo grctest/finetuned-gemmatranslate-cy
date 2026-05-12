@@ -30,7 +30,7 @@
                 "en-cy",
                 "cy-en"
             ],
-            "rows_used": 209578,
+            "rows_used": 199245,
             "rows_available": 104738,
             "source_rows_used": 104738
         },
@@ -88,7 +88,7 @@
             "config": "eng",
             "language": "en",
             "usage": 1.0,
-            "rows_used": 113378,
+            "rows_used": 108940,
             "rows_available": 113395,
             "source_rows_used": 113395
         },
@@ -187,7 +187,7 @@
             "config": "spa",
             "language": "es",
             "usage": 1.0,
-            "rows_used": 34280,
+            "rows_used": 34268,
             "rows_available": 34281,
             "source_rows_used": 34281
         },
@@ -204,7 +204,7 @@
             "path": "locailabs/nemotron-chat-welsh",
             "language": "cy",
             "usage": 1.0,
-            "rows_used": 27712,
+            "rows_used": 27679,
             "rows_available": 27807,
             "source_rows_used": 27807
         }
@@ -216,11 +216,11 @@
         "max_seq_len": 2048
     },
     "_run_summary": {
-        "total_translation_rows": 907471,
-        "total_instruction_rows": 412020,
-        "total_rows": 1319491,
-        "translation_percentage": "68.8%",
-        "instruction_percentage": "31.2%"
+        "total_translation_rows": 1106716,
+        "total_instruction_rows": 407537,
+        "total_rows": 1514253,
+        "translation_percentage": "73.1%",
+        "instruction_percentage": "26.9%"
     },
     "_constructed_summary": {
         "total_translation_rows": 733196,

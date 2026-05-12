@@ -28,6 +28,9 @@ PROFILE_CONFIGS = {
 
 
 def parse_args():
+    """
+    Parses arguments for weights merging, allowing for device profile selection.
+    """
     parser = argparse.ArgumentParser(description="Merge LoRA adapters into the base model.")
     parser.add_argument(
         "--profile",
@@ -40,6 +43,10 @@ def parse_args():
 
 
 def load_metadata():
+    """
+    Retrieves training metadata from the artifact JSON to verify if a Lora 
+    merge is applicable.
+    """
     if not os.path.exists(ARTIFACT_METADATA_PATH):
         return None
 
@@ -48,6 +55,12 @@ def load_metadata():
 
 
 def merge_weights(args):
+    """
+    Orchestrates the LoRA-to-Base merge. 
+    
+    Loads the original model, attaches the trained adapter, merges the weights 
+    natively, and saves a standalone HF-compatible model to the final directory.
+    """
     metadata = load_metadata()
 
     if metadata and metadata.get("training_mode") == "full":

@@ -1,0 +1,33 @@
+Loading dataset from ./processed_data...
+Loaded 1318210 records. Loading tokenizer from ./local_model...
+Mapping dataset to calculate lengths...
+
+--- Global Token Length Distribution Statistics ---
+Count:           1,318,210
+Mean Tokens:     306.98
+Median Tokens:   99.00
+Maximum Tokens:  3294
+95th Percentile: 1587
+99th Percentile: 2049
+99.9th Percentil:2885
+
+--- TRANSLATION Segment Statistics ---
+Count:           922,747
+Mean Tokens:     206.23
+Median Tokens:   75.00
+Maximum Tokens:  3294
+95th Percentile: 1013
+99th Percentile: 1983
+99.9th Percentil:2943
+
+--- INSTRUCTION Segment Statistics ---
+Count:           395,463
+Mean Tokens:     542.08
+Median Tokens:   265.00
+Maximum Tokens:  3164
+95th Percentile: 2049
+99th Percentile: 2049
+99.9th Percentil:2246
+
+Training Analysis:
+When `packing=True`, lengths are squashed together up to `max_seq_length`, so the max length matters less for clipping.

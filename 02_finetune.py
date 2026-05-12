@@ -132,6 +132,12 @@ PROFILE_CONFIGS = {
 
 
 def parse_args():
+    """
+    Parses command-line arguments for the fine-tuning script.
+    
+    Includes hardware profile selection, sample limits for testing, 
+    and multi-processing configuration for tokenization.
+    """
     parser = argparse.ArgumentParser(
         description="Fine-tune TranslateGemma for English/Welsh translation."
     )
@@ -199,6 +205,10 @@ def parse_args():
 
 
 def validate_processed_dataset(dataset):
+    """
+    Ensures the loaded dataset contains the canonical flat columns required 
+    for TranslateGemma's prompt engineering.
+    """
     required_columns = {
         "task",
         "source_text",
@@ -217,6 +227,10 @@ def validate_processed_dataset(dataset):
 
 
 def resolve_eval_split(dataset):
+    """
+    Identifies the appropriate split to use for evaluation (preferring 'validation' 
+    then 'test') within the dataset dictionary.
+    """
     if "validation" in dataset:
         return "validation"
     if "test" in dataset:
@@ -230,6 +244,10 @@ def resolve_eval_split(dataset):
 
 
 def build_translation_prompt(example, tokenizer):
+    """
+    Constructs a translation prompt using the model's chat template and 
+    TranslateGemma's specific source/target language codes.
+    """
     prompt = tokenizer.apply_chat_template(
         [
             {
@@ -257,6 +275,10 @@ def build_translation_prompt(example, tokenizer):
 
 
 def build_instruction_prompt(example, tokenizer):
+    """
+    Constructs a plain-text instruction prompt for secondary task mix, 
+    matching the Gemma Turn-Based format.
+    """
     bos_token = tokenizer.bos_token or ""
     prompt = (
         f"{bos_token}{USER_TURN_TEMPLATE}"
@@ -272,10 +294,16 @@ def build_instruction_prompt(example, tokenizer):
 
 
 def build_completion(example):
+    """
+    Standardizes the target response with a trailing end-of-turn token.
+    """
     return f"{str(example['target_text']).strip()}{END_OF_TURN_TEMPLATE}"
 
 
 def render_prompt_completion(example, tokenizer):
+    """
+    High-level mapper to route task rows to their respective prompt builders.
+    """
     if example["task"] == "translation":
         prompt = build_translation_prompt(example, tokenizer)
     elif example["task"] == "instruction":
@@ -290,6 +318,10 @@ def render_prompt_completion(example, tokenizer):
 
 
 def prepare_prompt_completion_dataset(split_dataset, tokenizer, max_samples, num_proc):
+    """
+    Transforms the raw processed dataset into a flat (prompt, completion) 
+    format ready for the SFTTrainer's data collator.
+    """
     if max_samples is not None:
         split_dataset = split_dataset.select(range(min(max_samples, len(split_dataset))))
 
